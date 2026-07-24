@@ -370,13 +370,6 @@
 
 <div class="input-dock">
   <div class="input-col">
-    <div id="logoUploadRow" style="display:none; margin-bottom:10px;">
-      <label for="logoFileInput" style="display:inline-flex; align-items:center; gap:8px; background:#fff; border:1.5px solid var(--paper-line); border-radius:var(--pill); padding:9px 16px; font-family:var(--body); font-weight:600; font-size:12.5px; color:var(--ink); cursor:pointer;">
-        📎 Upload logo file
-      </label>
-      <input type="file" id="logoFileInput" accept="image/*" style="display:none;">
-      <span id="logoFileName" style="font-family:var(--body); font-size:12px; color:var(--ink-soft); margin-left:10px;"></span>
-    </div>
     <div class="input-wrap">
       <textarea id="userInput" rows="1" placeholder="Type your answer…"></textarea>
       <button id="sendBtn">Submit</button>
@@ -434,7 +427,7 @@ const QUESTIONS = [
   { id:'address', stage:'business', q:"What's your business address? (or say \"online only\" if you have no physical location)", required:false },
   { id:'contact', stage:'business', q:"What contact details should appear on the site? (email, phone, etc.)", required:true },
 
-  { id:'logo', stage:'branding', q:"Do you have a logo ready? (yes/no — if yes you can share it after this chat; if no, I'll design placeholder branding)", required:true },
+  { id:'logo', stage:'branding', q:"Do you have a logo ready? (yes/no — either way, you'll be able to upload the actual image file directly into the site's Admin Panel once we start building, so no need to attach it here)", required:true },
   { id:'colors', stage:'branding', q:"Do you have preferred brand colors? (hex codes if you have them, or just describe them — e.g. \"navy and gold\")", required:false },
   { id:'typography', stage:'branding', q:"Any typography preferences? (e.g. modern sans-serif, elegant serif — or say \"no preference\")", required:false },
   { id:'style', stage:'branding', q:"What visual style fits your brand best? (Modern / Luxury / Corporate / Minimal / Creative / Dark / Light)", required:true },
@@ -467,9 +460,17 @@ DEVELOPMENT: once confirmed, build one logical section at a time (Header, Hero, 
 
 CODE QUALITY: every full-page snippet must be complete, closed, production-ready, properly indented, and free of placeholder comments or truncated logic — it must render correctly as a standalone file on its own.
 
-IMAGES: never invent broken URLs. Use SVG placeholders/skeletons sized to the correct aspect ratio until real assets exist. For each real image slot, provide a sourcing brief (search terms, what it should depict, why it fits, placement, crop ratio, color compatibility) rather than a fake stock ID. If the brief includes an actual uploaded logo data URI, use that exact string as the logo image's src wherever the logo appears — do not substitute a placeholder for it.
+IMAGES: never invent broken URLs. Use SVG placeholders/skeletons sized to the correct aspect ratio until real assets exist. For each real image slot, provide a sourcing brief (search terms, what it should depict, why it fits, placement, crop ratio, color compatibility) rather than a fake stock ID. See IMAGE SLOTS below for the mandatory upload mechanism — clients add real images themselves through the Admin Panel, not by asking you to embed data.
 
 ADMIN PANEL: every build includes a lightweight client-editable panel (contact info, social links, hero/CTA copy) with a live preview and an "Export Changes" button producing a site-config.json, plus plain-language upload instructions for their specific host. Flag clearly that a static site's password gate is a soft convenience gate, not real security.
+
+IMAGE SLOTS (mandatory on every build): every image on the site — logo, hero, about, services, team, gallery, testimonials, blog thumbnails, CTA, footer, everywhere — must be implemented as an <img> tag carrying a unique attribute data-img-slot="descriptive-name" (e.g. data-img-slot="logo", data-img-slot="hero-1", data-img-slot="team-jane"). Default src for every slot is a neutral light-gray inline SVG placeholder sized to that slot's aspect ratio — never a broken or external URL.
+
+The Admin Panel must include an "Images" section listing every data-img-slot present on the page, each row showing: a small thumbnail of its current image, an "Upload" file input (accept="image/*") that reads the chosen file with FileReader as a data URL and immediately updates that slot's live src on the page, and a "Remove" button that resets it back to the placeholder. Do not ask the client to paste image URLs or base64 text anywhere — file picker only.
+
+"Export Changes" must include the current image data (slot name → data URL, or null if using the placeholder) inside the exported site-config.json alongside the other editable fields, and the on-page instructions must explain that re-uploading that file preserves image edits too.
+
+The logo is just another entry in this same image-slot system (data-img-slot="logo") — do not treat it specially or hardcode any image data into the logo tag; the client uploads it the same way as any other image, through the Admin Panel.
 
 DEPLOYMENT: give host-specific instructions matched to what the client chose. Never claim to deploy anything yourself or ask for real credentials — you guide, the client acts.
 
@@ -481,8 +482,6 @@ let onboardingIndex = 0;
 let onboardingAnswers = {};
 let onboardingComplete = false;
 let currentSiteCode = null;
-let uploadedLogoData = null;
-let uploadedLogoName = null;
 
 const previewBtn = document.getElementById('previewBtn');
 const exportBtn = document.getElementById('exportBtn');
@@ -497,28 +496,6 @@ const keyOverlay = document.getElementById('keyOverlay');
 const rail = document.getElementById('rail');
 const qcounter = document.getElementById('qcounter');
 const hintText = document.getElementById('hintText');
-const logoUploadRow = document.getElementById('logoUploadRow');
-const logoFileInput = document.getElementById('logoFileInput');
-const logoFileName = document.getElementById('logoFileName');
-
-logoFileInput.addEventListener('change', () => {
-  const file = logoFileInput.files[0];
-  if(!file) return;
-  if(file.size > 800 * 1024){
-    logoFileName.textContent = 'File too large (max ~800KB) — try a smaller image.';
-    logoFileName.style.color = 'var(--red)';
-    logoFileInput.value = '';
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    uploadedLogoData = reader.result; // data URL
-    uploadedLogoName = file.name;
-    logoFileName.style.color = 'var(--green)';
-    logoFileName.textContent = `✓ ${file.name} attached`;
-  };
-  reader.readAsDataURL(file);
-});
 
 function stageIndexFor(stageId){
   return STAGES.findIndex(s => s.id === stageId);
@@ -630,13 +607,6 @@ function showQuestion(index){
   skipBtn.style.display = item.required ? 'none' : 'inline-block';
   hintText.textContent = item.required ? 'Press Enter or Submit to continue' : 'Optional — answer or skip';
   userInput.placeholder = 'Type your answer…';
-  if(item.id === 'logo'){
-    logoUploadRow.style.display = 'block';
-    logoFileInput.value = '';
-    logoFileName.textContent = '';
-  }else{
-    logoUploadRow.style.display = 'none';
-  }
   userInput.focus();
 }
 
@@ -649,9 +619,6 @@ function buildBriefSummary(){
   let out = "Here is the client's full onboarding brief, collected one question at a time:\n\n" + lines.join('\n');
   if(onboardingAnswers.market_research){
     out += `\n\n---\nMarket research (competitors + target keywords) already completed during onboarding:\n${onboardingAnswers.market_research}`;
-  }
-  if(onboardingAnswers.logo_data){
-    out += `\n\n---\nThe client uploaded an actual logo file (${onboardingAnswers.logo_filename}). Use this exact data URI as the src of the site's logo <img> tag wherever the logo appears (header, footer, admin panel), instead of a placeholder:\n${onboardingAnswers.logo_data}`;
   }
   return out;
 }
@@ -773,21 +740,7 @@ async function handleOnboardingSubmit(rawText){
     if(item.required) return; // required question, nothing submitted, do nothing
   }
   onboardingAnswers[item.id] = answer || '(skipped)';
-
-  if(item.id === 'logo'){
-    if(uploadedLogoData){
-      onboardingAnswers.logo_data = uploadedLogoData;
-      onboardingAnswers.logo_filename = uploadedLogoName;
-      addMessage('user', `${answer || 'Uploaded a logo'}\n📎 ${uploadedLogoName} attached`);
-    }else{
-      addMessage('user', answer ? answer : '(skipped)');
-    }
-    logoUploadRow.style.display = 'none';
-    uploadedLogoData = null;
-    uploadedLogoName = null;
-  }else{
-    addMessage('user', answer ? answer : '(skipped)');
-  }
+  addMessage('user', answer ? answer : '(skipped)');
 
   if(item.id === 'services'){
     await runMarketResearch();
@@ -829,11 +782,10 @@ async function sendMessage(){
   if(!apiKey) return;
   if(!onboardingComplete){
     const item = QUESTIONS[onboardingIndex];
-    const hasLogoFile = item.id === 'logo' && uploadedLogoData;
-    if(!text && item.required && !hasLogoFile) return;
+    if(!text && item.required) return;
     userInput.value = '';
     userInput.style.height = 'auto';
-    await handleOnboardingSubmit(text || (hasLogoFile ? 'Yes' : ''));
+    await handleOnboardingSubmit(text);
     return;
   }
   if(!text) return;
